@@ -7,11 +7,12 @@ import (
 	"unicode"
 )
 
-var emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
+var (
+	emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
+	urlRegex   = regexp.MustCompile(`^(http(s)?://)?([\da-z\.-]+)\.([a-z\.]{2,6})([/\w \.-]*)*/?$`)
+)
 
 type RuleFunc func() RuleSet
-
-type ValidateFunc func(RuleSet) bool
 
 type RuleSet struct {
 	Name         string
@@ -48,6 +49,22 @@ func Message(msg string) RuleFunc {
 			Name:      "message",
 			RuleValue: msg,
 		}
+	}
+}
+
+func Url() RuleSet {
+	return RuleSet{
+		Name: "url",
+		MessageFunc: func(set RuleSet) string {
+			return "not a valid url"
+		},
+		ValidateFunc: func(set RuleSet) bool {
+			u, ok := set.FieldValue.(string)
+			if !ok {
+				return false
+			}
+			return urlRegex.MatchString(u)
+		},
 	}
 }
 
@@ -125,6 +142,10 @@ func New(data any, fields Fields) *Validator {
 	}
 }
 
+func Validate(in any, out any, fields Fields) bool {
+	return true
+}
+
 func (v *Validator) Validate(target any) bool {
 	ok := true
 	for fieldName, ruleSets := range v.fields {
@@ -159,6 +180,9 @@ func setErrorMessage(v any, fieldName string, msg string) {
 		t[fieldName] = msg
 	default:
 		structVal := reflect.ValueOf(v)
+		if structVal.Kind() != reflect.Ptr || structVal.IsNil() {
+			return
+		}
 		structVal = structVal.Elem()
 		field := structVal.FieldByName(fieldName)
 		field.Set(reflect.ValueOf(msg))

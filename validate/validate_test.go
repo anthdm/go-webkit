@@ -24,8 +24,12 @@ func TestBarBar(t *testing.T) {
 
 	var errs CustomError
 	ok := New(data, Fields{
-		"FirstName": Rules(Required),
-	}).Validate(&errs)
+		"FirstName": Rules(
+			Required,
+			Min(10),
+			Max(100),
+			Message("The name needs to present")),
+	}).Validate(errs)
 	if !ok {
 		fmt.Println(errs)
 	}
@@ -61,6 +65,29 @@ func TestRequired(t *testing.T) {
 		data.Name = "foo"
 		ok := New(data, Fields{
 			"Name": Rules(Required),
+		}).Validate(errs)
+		assertTrue(t, ok)
+		asserteq(t, 0, len(errs))
+	})
+}
+
+func TestUrl(t *testing.T) {
+	data := struct {
+		Url string
+	}{Url: "http://foocom"}
+	t.Run("invalid", func(t *testing.T) {
+		errs := map[string]string{}
+		ok := New(data, Fields{
+			"Url": Rules(Url),
+		}).Validate(errs)
+		assertFalse(t, ok)
+		asserteq(t, 1, len(errs))
+	})
+	t.Run("valid", func(t *testing.T) {
+		errs := map[string]string{}
+		data.Url = "http://foo.com"
+		ok := New(data, Fields{
+			"Url": Rules(Url),
 		}).Validate(errs)
 		assertTrue(t, ok)
 		asserteq(t, 0, len(errs))
