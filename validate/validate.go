@@ -7,37 +7,81 @@ import (
 	"unicode"
 )
 
-var defaultMessages = map[string]string{
-	"min": "must be at least %d characters",
-	"max": "must not exceed %d characters",
-}
+var emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
 
 type RuleFunc func() RuleSet
 
+type ValidateFunc func(RuleSet) bool
+
 type RuleSet struct {
-	Name  string
-	Value any
+	Name         string
+	RuleValue    any
+	FieldValue   any
+	FieldName    any
+	MessageFunc  func(RuleSet) string
+	ValidateFunc func(RuleSet) bool
 }
 
 type Fields map[string][]RuleSet
 
+type Messages map[string]string
+
 func Required() RuleSet {
 	return RuleSet{
 		Name: "required",
+		MessageFunc: func(set RuleSet) string {
+			return fmt.Sprintf("%s is a required field", set.FieldName)
+		},
+		ValidateFunc: func(rule RuleSet) bool {
+			str, ok := rule.FieldValue.(string)
+			if !ok {
+				return false
+			}
+			return len(str) > 0
+		},
+	}
+}
+
+func Message(msg string) RuleFunc {
+	return func() RuleSet {
+		return RuleSet{
+			Name:      "message",
+			RuleValue: msg,
+		}
 	}
 }
 
 func Email() RuleSet {
 	return RuleSet{
 		Name: "email",
+		MessageFunc: func(set RuleSet) string {
+			return "email address is invalid"
+		},
+		ValidateFunc: func(set RuleSet) bool {
+			email, ok := set.FieldValue.(string)
+			if !ok {
+				return false
+			}
+			return emailRegex.MatchString(email)
+		},
 	}
 }
 
 func Max(n int) RuleFunc {
 	return func() RuleSet {
 		return RuleSet{
-			Name:  "max",
-			Value: n,
+			Name:      "max",
+			RuleValue: n,
+			ValidateFunc: func(set RuleSet) bool {
+				str, ok := set.FieldValue.(string)
+				if !ok {
+					return false
+				}
+				return len(str) <= n
+			},
+			MessageFunc: func(set RuleSet) string {
+				return fmt.Sprintf("%s should be maximum %d characters long", set.FieldName, n)
+			},
 		}
 	}
 }
@@ -45,8 +89,18 @@ func Max(n int) RuleFunc {
 func Min(n int) RuleFunc {
 	return func() RuleSet {
 		return RuleSet{
-			Name:  "min",
-			Value: n,
+			Name:      "min",
+			RuleValue: n,
+			ValidateFunc: func(set RuleSet) bool {
+				str, ok := set.FieldValue.(string)
+				if !ok {
+					return false
+				}
+				return len(str) >= n
+			},
+			MessageFunc: func(set RuleSet) string {
+				return fmt.Sprintf("%s should be at least %d characters long", set.FieldName, n)
+			},
 		}
 	}
 }
@@ -59,46 +113,56 @@ func Rules(rules ...RuleFunc) []RuleSet {
 	return ruleSets
 }
 
-func Validate(v any, fields Fields) (map[string]string, bool) {
-	errors := map[string]string{}
+type Validator struct {
+	data   any
+	fields Fields
+}
+
+func New(data any, fields Fields) *Validator {
+	return &Validator{
+		fields: fields,
+		data:   data,
+	}
+}
+
+func (v *Validator) Validate(target any) bool {
 	ok := true
-	for fieldName, ruleSets := range fields {
+	for fieldName, ruleSets := range v.fields {
 		// reflect panics on un-exported variables.
 		if !unicode.IsUpper(rune(fieldName[0])) {
 			continue
 		}
-		fieldValue := getFieldValueByName(v, fieldName)
+		fieldValue := getFieldValueByName(v.data, fieldName)
 		for _, set := range ruleSets {
-			if !validate(fieldValue, set) {
-				msg := defaultMessages[set.Name]
-				errors[fieldName] = fmt.Sprintf(msg, set.Value)
+			set.FieldValue = fieldValue
+			set.FieldName = fieldName
+			if set.Name == "message" {
+				setErrorMessage(target, fieldName, set.RuleValue.(string))
+				continue
+			}
+			if !set.ValidateFunc(set) {
+				msg := set.MessageFunc(set)
+				setErrorMessage(target, fieldName, msg)
 				ok = false
 			}
 		}
 	}
-	return errors, ok
+	return ok
 }
 
-func validate(value any, ruleSet RuleSet) bool {
-	switch ruleSet.Name {
-	case "required":
-		str, ok := validateString(value)
-		if !ok {
-			return false
-		}
-		return len(str) > 0
-	case "email":
-		email, ok := validateString(value)
-		if !ok {
-			return false
-		}
-		return validateEmail(email)
-	case "min":
-		return validateMinMax(value, ruleSet.Value.(int), true)
-	case "max":
-		return validateMinMax(value, ruleSet.Value.(int), false)
+func setErrorMessage(v any, fieldName string, msg string) {
+	if v == nil {
+		return
 	}
-	return false
+	switch t := v.(type) {
+	case map[string]string:
+		t[fieldName] = msg
+	default:
+		structVal := reflect.ValueOf(v)
+		structVal = structVal.Elem()
+		field := structVal.FieldByName(fieldName)
+		field.Set(reflect.ValueOf(msg))
+	}
 }
 
 func getFieldValueByName(v any, name string) any {
@@ -114,31 +178,4 @@ func getFieldValueByName(v any, name string) any {
 		return nil
 	}
 	return fieldVal.Interface()
-}
-
-func validateMinMax(v any, n int, min bool) bool {
-	switch t := v.(type) {
-	case string:
-		if min {
-			return len(t) >= n
-		}
-		return len(t) <= n
-	case int:
-		if min {
-			return t >= n
-		}
-		return t <= n
-	default:
-		return false
-	}
-}
-
-func validateString(v any) (out string, ok bool) {
-	out, ok = v.(string)
-	return
-}
-
-func validateEmail(email string) bool {
-	var emailRegex = regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,4}$`)
-	return emailRegex.MatchString(email)
 }

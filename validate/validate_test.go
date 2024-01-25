@@ -6,32 +6,136 @@ import (
 	"testing"
 )
 
-type User struct {
+type CustomError struct {
 	FirstName string
-	Email     string
+	Name      string
+}
+
+func TestBarBar(t *testing.T) {
+	data := struct {
+		FirstName string
+		LastName  string
+		Email     string
+	}{
+		FirstName: "",
+		LastName:  "GG",
+		Email:     "cryptoanthdm@gmail.com",
+	}
+
+	var errs CustomError
+	ok := New(data, Fields{
+		"FirstName": Rules(Required),
+	}).Validate(&errs)
+	if !ok {
+		fmt.Println(errs)
+	}
+}
+
+func TestCustomMessage(t *testing.T) {
+	data := struct {
+		Name string
+	}{Name: ""}
+	errs := map[string]string{}
+	ok := New(data, Fields{
+		"Name": Rules(Required, Message("name not good")),
+	}).Validate(errs)
+	assertFalse(t, ok)
+	asserteq(t, 1, len(errs))
+	asserteq(t, "name not good", errs["Name"])
+}
+
+func TestRequired(t *testing.T) {
+	data := struct {
+		Name string
+	}{Name: ""}
+	t.Run("invalid", func(t *testing.T) {
+		errs := map[string]string{}
+		ok := New(data, Fields{
+			"Name": Rules(Required),
+		}).Validate(errs)
+		assertFalse(t, ok)
+		asserteq(t, 1, len(errs))
+	})
+	t.Run("valid", func(t *testing.T) {
+		errs := map[string]string{}
+		data.Name = "foo"
+		ok := New(data, Fields{
+			"Name": Rules(Required),
+		}).Validate(errs)
+		assertTrue(t, ok)
+		asserteq(t, 0, len(errs))
+	})
+}
+
+func TestEmail(t *testing.T) {
+	data := struct {
+		Email string
+	}{Email: "agg.com"}
+	t.Run("invalid", func(t *testing.T) {
+		errs := map[string]string{}
+		ok := New(data, Fields{
+			"Email": Rules(Email),
+		}).Validate(errs)
+		assertFalse(t, ok)
+		asserteq(t, 1, len(errs))
+	})
+	t.Run("valid", func(t *testing.T) {
+		errs := map[string]string{}
+		data.Email = "a@gg.com"
+		ok := New(data, Fields{
+			"Email": Rules(Email),
+		}).Validate(errs)
+		assertTrue(t, ok)
+		asserteq(t, 0, len(errs))
+	})
 }
 
 func TestMin(t *testing.T) {
 	data := struct {
 		Name string
 	}{Name: "123"}
-	errors, ok := Validate(data, Fields{
-		"Name": Rules(Min(5)),
+	t.Run("invalid", func(t *testing.T) {
+		errs := map[string]string{}
+		ok := New(data, Fields{
+			"Name": Rules(Min(5)),
+		}).Validate(errs)
+		assertFalse(t, ok)
+		asserteq(t, 1, len(errs))
 	})
-	fmt.Println(errors)
-	assertTrue(t, ok)
-	asserteq(t, 0, len(errors))
+	t.Run("valid", func(t *testing.T) {
+		errs := map[string]string{}
+		data.Name = "123456"
+		ok := New(data, Fields{
+			"Name": Rules(Min(5)),
+		}).Validate(errs)
+		assertTrue(t, ok)
+		asserteq(t, 0, len(errs))
+	})
 }
 
 func TestMax(t *testing.T) {
 	data := struct {
 		Name string
-	}{Name: "12345000"}
-	errors, ok := Validate(data, Fields{
-		"Name": Rules(Max(4)),
+	}{Name: "1234444444"}
+	t.Run("invalid", func(t *testing.T) {
+		errs := map[string]string{}
+		ok := New(data, Fields{
+			"Name": Rules(Max(5)),
+		}).Validate(errs)
+		assertFalse(t, ok)
+		asserteq(t, 1, len(errs))
 	})
-	assertTrue(t, ok)
-	asserteq(t, 0, len(errors))
+	t.Run("valid", func(t *testing.T) {
+		errs := map[string]string{}
+		foo := struct {
+			Name string
+		}{Name: "123"}
+		ok := New(foo, Fields{
+			"Name": Rules(Max(5)),
+		}).Validate(errs)
+		assertTrue(t, ok)
+		asserteq(t, 0, len(errs))
+	})
 }
 
 func assertTrue(t *testing.T, con bool) {
