@@ -1,9 +1,16 @@
 package validate
 
 import (
+	"fmt"
 	"reflect"
 	"regexp"
+	"unicode"
 )
+
+var defaultMessages = map[string]string{
+	"min": "must be at least %d characters",
+	"max": "must not exceed %d characters",
+}
 
 type RuleFunc func() RuleSet
 
@@ -54,20 +61,32 @@ func Rules(rules ...RuleFunc) []RuleSet {
 
 func Validate(v any, fields Fields) (map[string]string, bool) {
 	errors := map[string]string{}
-	hasErr := false
-	for field, ruleSets := range fields {
+	ok := true
+	for fieldName, ruleSets := range fields {
+		// reflect panics on un-exported variables.
+		if !unicode.IsUpper(rune(fieldName[0])) {
+			continue
+		}
+		fieldValue := getFieldValueByName(v, fieldName)
 		for _, set := range ruleSets {
-			if !validate(field, set) {
-				errors[field] = "foo"
-				hasErr = true
+			if !validate(fieldValue, set) {
+				msg := defaultMessages[set.Name]
+				errors[fieldName] = fmt.Sprintf(msg, set.Value)
+				ok = false
 			}
 		}
 	}
-	return errors, hasErr
+	return errors, ok
 }
 
 func validate(value any, ruleSet RuleSet) bool {
 	switch ruleSet.Name {
+	case "required":
+		str, ok := validateString(value)
+		if !ok {
+			return false
+		}
+		return len(str) > 0
 	case "email":
 		email, ok := validateString(value)
 		if !ok {
@@ -82,7 +101,7 @@ func validate(value any, ruleSet RuleSet) bool {
 	return false
 }
 
-func getFieldValueByName(v any, name string) interface{} {
+func getFieldValueByName(v any, name string) any {
 	val := reflect.ValueOf(v)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
