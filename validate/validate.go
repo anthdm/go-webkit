@@ -142,10 +142,6 @@ func New(data any, fields Fields) *Validator {
 	}
 }
 
-func Validate(in any, out any, fields Fields) bool {
-	return true
-}
-
 func (v *Validator) Validate(target any) bool {
 	ok := true
 	for fieldName, ruleSets := range v.fields {
@@ -175,9 +171,12 @@ func setErrorMessage(v any, fieldName string, msg string) {
 	if v == nil {
 		return
 	}
-	switch t := v.(type) {
-	case map[string]string:
-		t[fieldName] = msg
+	switch v := v.(type) {
+	case *map[string]string:
+		if *v == nil {
+			*v = map[string]string{}
+		}
+		(*v)[fieldName] = msg
 	default:
 		structVal := reflect.ValueOf(v)
 		if structVal.Kind() != reflect.Ptr || structVal.IsNil() {

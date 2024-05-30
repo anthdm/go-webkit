@@ -1,7 +1,9 @@
 package validate
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"testing"
 )
@@ -9,6 +11,45 @@ import (
 type CustomError struct {
 	FirstName string
 	Name      string
+}
+
+type CreateUserRequest struct {
+	FirstName string
+	LastName  string
+	Email     string
+}
+
+type CreateUserErrors struct {
+	FirstName string
+	LastName  string
+	Email     string
+}
+
+func TestFooBarBaz(t *testing.T) {
+	data := `{"name": "GG"}`
+	var m map[string]string
+	if err := json.Unmarshal([]byte(data), &m); err != nil {
+		log.Fatal(err)
+	}
+}
+
+var UserScheme = Fields{
+	"FirstName": Rules(Min(3), Max(10)),
+	"LastName":  Rules(Min(3)),
+	"Email":     Rules(Email),
+}
+
+func TestFooBar(t *testing.T) {
+	req := CreateUserRequest{
+		FirstName: "Anthony",
+		LastName:  "ddddddd",
+		Email:     "foo@foo",
+	}
+
+	var errors map[string]string
+	if !New(&req, UserScheme).Validate(&errors) {
+		fmt.Println("the validate errors", errors)
+	}
 }
 
 func TestBarBar(t *testing.T) {
